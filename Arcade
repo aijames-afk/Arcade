@@ -1,0 +1,398 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { 
+  Zap, Coins, Lock, Home, Users, Check, Copy, Activity, Star, 
+  Gamepad2, Hash, MousePointer2, Trophy, Target, Brain, 
+  Swords, RotateCcw, Share2, LogIn, Rocket, Car, Ghost, 
+  Dna, Flame, Box, Music, Search, Heart
+} from 'lucide-react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, updateDoc, onSnapshot, increment, arrayUnion } from 'firebase/firestore';
+
+// ==========================================
+// --- CONFIGURATION & FIREBASE ---
+// ==========================================
+const fbConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const app = initializeApp(fbConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'global-arcade-v3';
+
+// ==========================================
+// --- GAME ENGINES ---
+// ==========================================
+
+/**
+ * ENGINE: SIM-X (The Universal Simulation Engine)
+ */
+const SimXEngine = ({ game, onWin }) => {
+  const [score, setScore] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [timer, setTimer] = useState(30);
+  const [targetPos, setTargetPos] = useState({ x: 50, y: 50 });
+  
+  const startGame = () => {
+    setIsPlaying(true);
+    setScore(0);
+    setTimer(30);
+    moveTarget();
+  };
+
+  const moveTarget = () => {
+    setTargetPos({ 
+      x: 10 + Math.random() * 80, 
+      y: 10 + Math.random() * 80 
+    });
+  };
+
+  const handleClick = () => {
+    if (!isPlaying) return;
+    setScore(s => s + 10);
+    moveTarget();
+  };
+
+  useEffect(() => {
+    let interval;
+    if (isPlaying && timer > 0) {
+      interval = setInterval(() => setTimer(t => t - 1), 1000);
+    } else if (timer === 0) {
+      setIsPlaying(false);
+      onWin(Math.floor(score / 5));
+    }
+    return () => clearInterval(interval);
+  }, [isPlaying, timer]);
+
+  const getThemeColor = () => {
+    if (game.id.includes('Space')) return 'bg-indigo-600';
+    if (game.id.includes('Dungeon')) return 'bg-red-900';
+    if (game.id.includes('Kart')) return 'bg-yellow-500';
+    return 'bg-blue-600';
+  };
+
+  return (
+    <div className="w-full max-w-xl flex flex-col items-center gap-6">
+      <div className="flex justify-between w-full font-black text-xl px-4">
+        <span className="text-blue-400">SCORE: {score}</span>
+        <span className={timer < 10 ? 'text-red-500 animate-pulse' : 'text-slate-500'}>TIME: {timer}s</span>
+      </div>
+      
+      <div 
+        className={`w-full aspect-video rounded-3xl relative overflow-hidden border-4 border-slate-800 bg-slate-950 cursor-crosshair`}
+        onClick={handleClick}
+      >
+        <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
+        
+        {isPlaying ? (
+          <div 
+            className={`absolute w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 shadow-2xl ${getThemeColor()}`}
+            style={{ left: `${targetPos.x}%`, top: `${targetPos.y}%`, transform: 'translate(-50%, -50%)' }}
+          >
+            {game.icon}
+          </div>
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-sm p-6 text-center">
+            <h3 className="text-2xl font-black mb-4 uppercase">{game.name}</h3>
+            <button onClick={startGame} className="bg-blue-600 px-10 py-4 rounded-2xl font-black text-xl hover:scale-105 transition-transform shadow-xl">
+              {timer === 0 ? 'PLAY AGAIN' : 'START SIMULATION'}
+            </button>
+            {timer === 0 && <p className="mt-4 text-yellow-500 font-black tracking-widest">SESSION EARNED: {Math.floor(score / 5)} COINS</p>}
+          </div>
+        )}
+      </div>
+      <p className="text-slate-500 text-xs font-bold uppercase tracking-widest text-center px-8">
+        Sim-X Environment: Click the target to earn coins!
+      </p>
+    </div>
+  );
+};
+
+const SnakeGame = ({ onWin }) => {
+  const [snake, setSnake] = useState([{ x: 10, y: 10 }]);
+  const [food, setFood] = useState({ x: 5, y: 5 });
+  const [dir, setDir] = useState({ x: 0, y: -1 });
+  const [isGameOver, setIsGameOver] = useState(false);
+  const [score, setScore] = useState(0);
+
+  const moveSnake = useCallback(() => {
+    if (isGameOver) return;
+    setSnake(prev => {
+      const head = { x: prev[0].x + dir.x, y: prev[0].y + dir.y };
+      if (head.x < 0 || head.x >= 20 || head.y < 0 || head.y >= 20 || prev.some(s => s.x === head.x && s.y === head.y)) {
+        setIsGameOver(true);
+        if (score > 0) onWin(score * 5);
+        return prev;
+      }
+      const newSnake = [head, ...prev];
+      if (head.x === food.x && head.y === food.y) {
+        setScore(s => s + 1);
+        setFood({ x: Math.floor(Math.random() * 20), y: Math.floor(Math.random() * 20) });
+      } else {
+        newSnake.pop();
+      }
+      return newSnake;
+    });
+  }, [dir, food, isGameOver, score, onWin]);
+
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === 'ArrowUp' && dir.y === 0) setDir({ x: 0, y: -1 });
+      if (e.key === 'ArrowDown' && dir.y === 0) setDir({ x: 0, y: 1 });
+      if (e.key === 'ArrowLeft' && dir.x === 0) setDir({ x: -1, y: 0 });
+      if (e.key === 'ArrowRight' && dir.x === 0) setDir({ x: 1, y: 0 });
+    };
+    window.addEventListener('keydown', handleKey);
+    const interval = setInterval(moveSnake, 150);
+    return () => { window.removeEventListener('keydown', handleKey); clearInterval(interval); };
+  }, [moveSnake, dir]);
+
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <div className="text-xl font-black text-blue-400">Score: {score}</div>
+      <div className="grid grid-cols-20 grid-rows-20 bg-slate-950 border-4 border-slate-800 rounded-lg overflow-hidden" style={{ width: '300px', height: '300px', display: 'grid', gridTemplateColumns: 'repeat(20, 1fr)' }}>
+        {Array.from({ length: 400 }).map((_, i) => {
+          const x = i % 20;
+          const y = Math.floor(i / 20);
+          const isSnake = snake.some(s => s.x === x && s.y === y);
+          const isFood = food.x === x && food.y === y;
+          return <div key={i} className={`w-full h-full ${isSnake ? 'bg-blue-500' : isFood ? 'bg-rose-500 animate-pulse' : ''}`} />;
+        })}
+      </div>
+      {isGameOver && <button onClick={() => { setSnake([{x:10,y:10}]); setIsGameOver(false); setScore(0); }} className="bg-blue-600 px-6 py-2 rounded-full font-bold">Try Again</button>}
+    </div>
+  );
+};
+
+const ReactionTrainer = ({ onWin }) => {
+  const [state, setState] = useState('waiting');
+  const [startTime, setStartTime] = useState(0);
+  const [result, setResult] = useState(0);
+  const timerRef = useRef(null);
+
+  const start = () => {
+    setState('ready');
+    timerRef.current = setTimeout(() => {
+      setStartTime(Date.now());
+      setState('click');
+    }, 2000 + Math.random() * 3000);
+  };
+
+  const handleClick = () => {
+    if (state === 'ready') { clearTimeout(timerRef.current); setState('waiting'); }
+    else if (state === 'click') {
+      const diff = Date.now() - startTime;
+      setResult(diff);
+      setState('result');
+      if (diff < 400) onWin(Math.max(5, Math.floor(1000/diff) * 2));
+    }
+  };
+
+  return (
+    <div onClick={state === 'waiting' || state === 'result' ? start : handleClick} className={`w-full max-w-md h-64 rounded-[2rem] flex items-center justify-center cursor-pointer transition-colors border-4 ${state === 'ready' ? 'bg-rose-600 border-rose-500' : state === 'click' ? 'bg-green-500 border-green-400' : 'bg-slate-800 border-slate-700'}`}>
+      <div className="text-2xl font-black text-center px-4">
+        {state === 'waiting' && 'TAP TO START'}
+        {state === 'ready' && 'WAIT FOR GREEN...'}
+        {state === 'click' && 'TAP NOW!'}
+        {state === 'result' && `${result}ms! TAP TO RETRY`}
+      </div>
+    </div>
+  );
+};
+
+// ==========================================
+// --- MULTIPLAYER & REGISTRY ---
+// ==========================================
+
+const MultiplayerLobby = ({ user, activeGame, showToast }) => {
+  const [roomCode, setRoomCode] = useState('');
+  const [activeRoom, setActiveRoom] = useState(null);
+  const [joining, setJoining] = useState(false);
+
+  const handleCreateRoom = async () => {
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', code), {
+      gameId: activeGame.id, hostId: user.uid, players: [user.uid], status: 'waiting', createdAt: Date.now()
+    });
+    setActiveRoom(code);
+    showToast("Room Created!");
+  };
+
+  const handleJoinRoom = async () => {
+    if (!roomCode) return;
+    setJoining(true);
+    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode.toUpperCase());
+    try {
+      await updateDoc(roomRef, { players: arrayUnion(user.uid), status: 'ready' });
+      setActiveRoom(roomCode.toUpperCase());
+    } catch (e) { showToast("Room Not Found"); }
+    finally { setJoining(false); }
+  };
+
+  if (activeRoom) {
+    return (
+      <div className="text-center animate-in zoom-in">
+        <div className="bg-slate-950 p-8 rounded-[2rem] border-2 border-blue-500/20 mb-6">
+          <p className="text-xs font-black text-slate-500 uppercase tracking-widest mb-1">Invite Code</p>
+          <p className="text-5xl font-mono font-black text-blue-400 tracking-tighter">{activeRoom}</p>
+        </div>
+        <button 
+          onClick={() => {
+            navigator.clipboard.writeText(activeRoom);
+            showToast("Code Copied!");
+          }}
+          className="flex items-center gap-2 mx-auto bg-blue-600 px-8 py-3 rounded-xl font-black hover:bg-blue-500 transition-all"
+        >
+          <Copy size={18}/> Copy Code
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-4 w-full max-w-xs">
+      <button onClick={handleCreateRoom} className="bg-blue-600 p-5 rounded-2xl font-black text-xl shadow-xl hover:-translate-y-1 transition-all">Create Room</button>
+      <div className="flex gap-2">
+        <input value={roomCode} onChange={e=>setRoomCode(e.target.value.toUpperCase())} placeholder="CODE" className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex-1 text-center font-mono font-bold"/>
+        <button onClick={handleJoinRoom} className="bg-slate-800 px-6 rounded-xl font-black">{joining ? <Activity className="animate-spin"/> : <LogIn/>}</button>
+      </div>
+    </div>
+  );
+};
+
+const GAME_DATABASE = [
+  { id: 'react', name: 'Reaction Pro', icon: <Target/>, price: 0, cat: 'Skill', engine: 'react' },
+  { id: 'snake', name: 'Neon Snake', icon: <Gamepad2/>, price: 50, cat: 'Classic', engine: 'snake' },
+  { id: 'm-ttt', name: 'Global TTT', icon: <Hash/>, price: 0, cat: 'Online', isMulti: true },
+  { id: 'm-rps', name: 'RPS Duel', icon: <Swords/>, price: 0, cat: 'Online', isMulti: true },
+  { id: 'space-miner', name: 'Space Miner', icon: <Rocket/>, price: 100, cat: 'Sci-Fi', engine: 'simx' },
+  { id: 'kart-racer', name: 'Kart Racer', icon: <Car/>, price: 150, cat: 'Racing', engine: 'simx' },
+  { id: 'ghost-hunt', name: 'Ghost Hunt', icon: <Ghost/>, price: 200, cat: 'Horror', engine: 'simx' },
+  { id: 'microbe-evo', name: 'Microbe Evo', icon: <Dna/>, price: 250, cat: 'Sim', engine: 'simx' },
+  { id: 'tower-def', name: 'Tower Defense', icon: <Box/>, price: 300, cat: 'Strategy', engine: 'simx' },
+];
+
+const EXTRA_TITLES = ["Word Dash", "Color Sort", "Pipe Maze", "Sudoku Pro", "Math Blitz", "Gravity", "Idle Mine", "Golf"];
+const ALL_GAMES = [...GAME_DATABASE, ...EXTRA_TITLES.map((t, i) => ({
+  id: `extra-${i}`, name: t, icon: <Star/>, price: 350 + (i * 20), cat: 'Arcade', engine: 'simx'
+}))];
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [coins, setCoins] = useState(0);
+  const [unlocked, setUnlocked] = useState(['react', 'm-ttt', 'm-rps']);
+  const [activeGame, setActiveGame] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+    initAuth();
+    return onAuthStateChanged(auth, setUser);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', user.uid);
+    return onSnapshot(userRef, (snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        setCoins(d.coins ?? 0);
+        setUnlocked(d.unlocked ?? ['react', 'm-ttt', 'm-rps']);
+      } else {
+        setDoc(userRef, { coins: 100, unlocked: ['react', 'm-ttt', 'm-rps'] });
+      }
+    }, (err) => console.error(err));
+  }, [user]);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleWin = async (amt) => {
+    if (!user || amt <= 0) return;
+    const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', user.uid);
+    await updateDoc(userRef, { coins: increment(amt) });
+    showToast(`Earned +${amt} Coins!`);
+  };
+
+  const handleBuy = async (game) => {
+    if (coins < game.price) {
+      showToast(`Need ${game.price - coins} more coins!`);
+      return;
+    }
+    const userRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', user.uid);
+    await updateDoc(userRef, { coins: increment(-game.price), unlocked: arrayUnion(game.id) });
+    showToast(`Unlocked ${game.name}!`);
+  };
+
+  if (!user) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-blue-500 font-black animate-pulse">LOADING ARCADE...</div>;
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans selection:bg-blue-500/30">
+      {toast && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[100] bg-blue-600 px-8 py-3 rounded-full shadow-2xl animate-in zoom-in slide-in-from-top-4 font-black flex items-center gap-2">
+          <Zap size={18} fill="currentColor"/> {toast}
+        </div>
+      )}
+
+      <nav className="sticky top-0 z-50 bg-slate-950/80 backdrop-blur-md border-b border-white/5 px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => setActiveGame(null)}>
+          <div className="bg-blue-600 p-2 rounded-xl"><Zap className="text-white" fill="currentColor" size={20}/></div>
+          <h1 className="text-xl font-black tracking-tighter uppercase">Arcade<span className="text-blue-500">Pro</span></h1>
+        </div>
+        <div className="bg-slate-900 px-4 py-2 rounded-full border border-white/5 flex items-center gap-3">
+          <Coins className="text-yellow-500" size={18}/>
+          <span className="font-mono font-bold text-yellow-400">{coins}</span>
+        </div>
+      </nav>
+
+      <main className="max-w-7xl mx-auto p-6">
+        {activeGame ? (
+          <div className="animate-in fade-in slide-in-from-bottom-4">
+            <button onClick={() => setActiveGame(null)} className="flex items-center gap-2 text-slate-500 hover:text-white mb-6 font-bold transition-colors">
+              <Home size={18}/> Back to Lobby
+            </button>
+            <div className="bg-slate-900 border border-white/5 rounded-[3rem] p-8 sm:p-12 min-h-[500px] flex flex-col items-center justify-center relative">
+               <h2 className="text-3xl font-black mb-12 text-blue-400 uppercase tracking-widest">{activeGame.name}</h2>
+               {activeGame.isMulti ? (
+                 <MultiplayerLobby user={user} activeGame={activeGame} showToast={showToast} />
+               ) : (
+                 activeGame.engine === 'react' ? <ReactionTrainer onWin={handleWin}/> :
+                 activeGame.engine === 'snake' ? <SnakeGame onWin={handleWin}/> :
+                 <SimXEngine game={activeGame} onWin={handleWin}/>
+               )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-12">
+            <section className="bg-gradient-to-br from-blue-600 to-indigo-950 rounded-[3rem] p-10 sm:p-20 relative overflow-hidden group">
+               <div className="relative z-10 max-w-xl text-center sm:text-left">
+                 <h2 className="text-5xl sm:text-7xl font-black leading-none mb-6">ARCADE<br/><span className="text-blue-400">UNLOCKED.</span></h2>
+                 <p className="text-blue-100/70 mb-8 font-medium">Earn coins in free modes to unlock premium simulations and multiplayer rooms.</p>
+                 <button className="bg-white text-blue-950 px-10 py-4 rounded-2xl font-black hover:scale-105 transition-all shadow-2xl">START PLAYING</button>
+               </div>
+               <div className="absolute right-[-10%] bottom-[-10%] opacity-10 pointer-events-none group-hover:rotate-12 transition-all duration-1000 hidden sm:block"><Gamepad2 size={600}/></div>
+            </section>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
+              {ALL_GAMES.map(game => {
+                const isUnlocked = unlocked.includes(game.id);
+                return (
+                  <div key={game.id} onClick={() => isUnlocked ? setActiveGame(game) : handleBuy(game)} 
+                    className={`group relative p-8 rounded-[2.5rem] border-2 flex flex-col items-center justify-between aspect-square cursor-pointer transition-all duration-500
+                      ${isUnlocked ? 'bg-slate-900 border-white/5 hover:border-blue-500/50 hover:-translate-y-2' : 'bg-slate-950 border-slate-900 grayscale opacity-60'}`}>
+                    {!isUnlocked && <Lock size={16} className="absolute top-5 left-5 text-slate-700"/>}
+                    <div className={`w-16 h-16 rounded-2xl flex items-center justify-center transition-all ${isUnlocked ? 'bg-slate-800 text-blue-400 group-hover:bg-blue-600 group-hover:text-white' : 'bg-slate-800 text-slate-700'}`}>
+                      {game.icon}
+                    </div>
+                    <div className="text-center w-full">
+                      <div className="text-sm font-black truncate uppercase mb-1">{game.name}</div>
+                      {!isUnlocked ? (
+                        <div className="text-[10px] text-yellow-500 font-black flex items-center gap-1 justify-center bg-yellow-500/10 py-1 rounded-full"><Coins size={12}/> {game.price}</div>
+                      ) : (
+                        <div className="text-[10px] text
